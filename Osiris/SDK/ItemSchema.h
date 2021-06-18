@@ -59,7 +59,7 @@ struct UtlMap {
     Node<Key, Value>* elements;
 };
 
-struct String {
+struct UtlString {
     UtlMemory<char> buffer;
     int length;
 
@@ -68,13 +68,13 @@ struct String {
 
 struct PaintKit {
     int id;
-    String name;
-    String description;
-    String itemName;
-    String sameNameFamilyAggregate;
-    String pattern;
-    String normal;
-    String logoMaterial;
+    UtlString name;
+    UtlString description;
+    UtlString itemName;
+    UtlString sameNameFamilyAggregate;
+    UtlString pattern;
+    UtlString normal;
+    UtlString logoMaterial;
     bool baseDiffuseOverride;
     int rarity;
     PAD(40)
@@ -85,11 +85,11 @@ struct PaintKit {
 struct StickerKit {
     int id;
     int rarity;
-    String name;
-    String description;
-    String itemName;
-    PAD(2 * sizeof(String))
-    String inventoryImage;
+    UtlString name;
+    UtlString description;
+    UtlString itemName;
+    PAD(2 * sizeof(UtlString))
+    UtlString inventoryImage;
 };
 
 enum class Team;
@@ -171,10 +171,10 @@ struct EconItemQualityDefinition {
 };
 
 struct AlternateIconData {
-    String simpleName;
-    String largeSimpleName;
-    String iconURLSmall;
-    String iconURLLarge;
+    UtlString simpleName;
+    UtlString largeSimpleName;
+    UtlString iconURLSmall;
+    UtlString iconURLLarge;
     PAD(WIN32_LINUX(28, 48))
 };
 
@@ -268,6 +268,13 @@ public:
     }
 };
 
+class SharedObject {
+public:
+    INCONSTRUCTIBLE(SharedObject)
+
+    VIRTUAL_METHOD_V(int, getTypeID, 1, (), (this))
+};
+
 template <typename T>
 class SharedObjectTypeCache {
 public:
@@ -298,10 +305,17 @@ public:
     }
 };
 
+struct SOID {
+    std::uint64_t id;
+    std::uint32_t type;
+    std::uint32_t padding;
+};
+
 class CSPlayerInventory {
 public:
     INCONSTRUCTIBLE(CSPlayerInventory)
 
+    VIRTUAL_METHOD(void, soUpdated, 1, (SOID owner, SharedObject* object, int event), (this, owner, object, event))
     VIRTUAL_METHOD_V(void*, getItemInLoadout, 8, (Team team, int slot), (this, team, slot))
     VIRTUAL_METHOD_V(void, removeItem, 15, (std::uint64_t itemID), (this, itemID))
 
@@ -345,6 +359,11 @@ public:
     auto getAccountID() noexcept
     {
         return *reinterpret_cast<std::uint32_t*>(std::uintptr_t(this) + WIN32_LINUX(0x8, 0x10));
+    }
+
+    auto getSOID() noexcept
+    {
+        return *reinterpret_cast<SOID*>(std::uintptr_t(this) + WIN32_LINUX(0x8, 0x10));
     }
 };
 
