@@ -7,6 +7,8 @@
 #include "UtlVector.h"
 #include "VirtualMethod.h"
 
+#include "../Memory.h"
+
 enum class WeaponId : short;
 
 template <typename T>
@@ -94,6 +96,19 @@ struct StickerKit {
 
 enum class Team;
 
+union AttributeDataUnion {
+    float asFloat;
+    std::uint32_t asUint32;
+    char* asBlobPointer;
+};
+
+struct StaticAttrib {
+    std::uint16_t defIndex;
+    AttributeDataUnion value;
+    bool forceGCToGenerate;
+};
+static_assert(sizeof(StaticAttrib) == WIN32_LINUX(12, 24));
+
 class EconItemDefinition {
 public:
     INCONSTRUCTIBLE(EconItemDefinition)
@@ -116,6 +131,39 @@ public:
         return *reinterpret_cast<int*>(this + WIN32_LINUX(0x148, 0x1F8));
     }
 
+    const UtlVector<StaticAttrib>& getStaticAttributes() noexcept
+    {
+        return *reinterpret_cast<const UtlVector<StaticAttrib>*>(std::uintptr_t(this) + WIN32_LINUX(0x30, 0x50));
+    }
+
+    std::uint32_t getCrateSeriesNumber() noexcept
+    {
+        const auto& staticAttributes = getStaticAttributes();
+        for (int i = 0; i < staticAttributes.size; ++i)
+            if (staticAttributes[i].defIndex == 68 /* "set supply crate series" */)
+                return staticAttributes[i].value.asUint32;
+        return 0;
+    }
+
+    bool hasCrateSeries() noexcept
+    {
+        return getCrateSeriesNumber() != 0;
+    }
+
+    std::uint32_t getTournamentEventID() noexcept
+    {
+        const auto& staticAttributes = getStaticAttributes();
+        for (int i = 0; i < staticAttributes.size; ++i)
+            if (staticAttributes[i].defIndex == 137 /* "tournament event id" */)
+                return staticAttributes[i].value.asUint32;
+        return 0;
+    }
+
+    bool hasTournamentEventID() noexcept
+    {
+        return getTournamentEventID() != 0;
+    }
+
     bool isPaintable() noexcept { return getCapabilities() & 1; /* ITEM_CAP_PAINTABLE */ }
     bool isPatchable() noexcept { return getCapabilities() & (1 << 22); /* ITEM_CAP_CAN_PATCH */ }
 
@@ -135,7 +183,13 @@ public:
 struct ItemListEntry {
     int itemDef;
     int paintKit;
-    PAD(20)
+    int paintKitSeed;
+    float paintKitWear;
+    std::uint32_t stickerKit;
+    std::uint32_t musicKit;
+    bool isNestedList;
+    bool isUnusualList;
+    PAD(2)
 
     auto weaponId() const noexcept
     {
@@ -149,6 +203,11 @@ public:
 
     VIRTUAL_METHOD(const char*, getName, 0, (), (this))
     VIRTUAL_METHOD(const UtlVector<ItemListEntry>&, getLootListContents, 1, (), (this))
+
+    bool willProduceStatTrak() noexcept
+    {
+        return *reinterpret_cast<bool*>(std::uintptr_t(this) + WIN32_LINUX(0x36, 0x56));
+    }
 };
 
 class EconItemSetDefinition {
@@ -196,7 +255,9 @@ public:
     UtlMap<int, EconItemQualityDefinition> qualities;
     PAD(WIN32_LINUX(0x48, 0x60))
     UtlMap<int, EconItemDefinition*> itemsSorted;
-    PAD(WIN32_LINUX(0x104, 0x168))
+    PAD(WIN32_LINUX(0x60, 0x88))
+    UtlMap<int, const char*> revolvingLootLists;
+    PAD(WIN32_LINUX(0x80, 0xB0))
     UtlMap<std::uint64_t, AlternateIconData> alternateIcons;
     PAD(WIN32_LINUX(0x48, 0x60))
     UtlMap<int, PaintKit*> paintKits;
@@ -209,6 +270,7 @@ public:
     VIRTUAL_METHOD(EconItemAttributeDefinition*, getAttributeDefinitionInterface, 27, (int index), (this, index))
     VIRTUAL_METHOD(int, getItemSetCount, 28, (), (this))
     VIRTUAL_METHOD(EconItemSetDefinition*, getItemSet, 29, (int index), (this, index))
+    VIRTUAL_METHOD(EconLootListDefinition*, getLootList, 31, (const char* name, int* index = nullptr), (this, name, index))
     VIRTUAL_METHOD(EconLootListDefinition*, getLootList, 32, (int index), (this, index))
     VIRTUAL_METHOD(int, getLootListCount, 34, (), (this))
     VIRTUAL_METHOD(EconItemDefinition*, getItemDefinitionByName, 42, (const char* name), (this, name))
@@ -254,6 +316,8 @@ public:
     void setSeed(float seed) noexcept { setAttributeValue(7, &seed); }
     void setWear(float wear) noexcept { setAttributeValue(8, &wear); }
     void setMusicID(int musicID) noexcept { setAttributeValue(166, &musicID); }
+    void setStatTrak(int value) noexcept { setAttributeValue(80, &value); }
+    void setStatTrakType(int type) noexcept { setAttributeValue(81, &type); }
 
     void setStickerID(int slot, int stickerID) noexcept
     {
@@ -316,6 +380,7 @@ public:
     INCONSTRUCTIBLE(CSPlayerInventory)
 
     VIRTUAL_METHOD(void, soUpdated, 1, (SOID owner, SharedObject* object, int event), (this, owner, object, event))
+    VIRTUAL_METHOD(void, soDestroyed, 2, (SOID owner, SharedObject* object, int event), (this, owner, object, event))
     VIRTUAL_METHOD_V(void*, getItemInLoadout, 8, (Team team, int slot), (this, team, slot))
     VIRTUAL_METHOD_V(void, removeItem, 15, (std::uint64_t itemID), (this, itemID))
 
