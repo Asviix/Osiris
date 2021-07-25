@@ -1,5 +1,10 @@
 #pragma once
 
+#include <array>
+#include <cassert>
+#include <string>
+#include <vector>
+
 #include "StaticData.h"
 
 enum class Team;
@@ -9,13 +14,21 @@ struct StickerConfig {
     float wear = 0.0f;
 };
 
+enum class TournamentTeam : std::uint8_t;
+enum class TournamentStage : std::uint8_t;
+
 struct DynamicSkinData {
-    bool isSouvenir = false;
     float wear = 0.0f;
     int seed = 1;
     int statTrak = -1;
+    std::uint32_t tournamentID = 0;
     std::array<StickerConfig, 5> stickers;
     std::string nameTag;
+    TournamentStage tournamentStage{};
+    TournamentTeam tournamentTeam1{};
+    TournamentTeam tournamentTeam2{};
+
+    [[nodiscard]] bool isSouvenir() const noexcept { return tournamentID != 0; }
 };
 
 struct PatchConfig {
@@ -35,6 +48,12 @@ struct DynamicMusicData {
     int statTrak = -1;
 };
 
+struct DynamicSouvenirPackageData {
+    TournamentStage tournamentStage{};
+    TournamentTeam tournamentTeam1{};
+    TournamentTeam tournamentTeam2{};
+};
+
 struct InventoryItem {
 private:
     std::size_t itemIndex;
@@ -46,24 +65,26 @@ public:
     bool isDeleted() const noexcept { return itemIndex == static_cast<std::size_t>(-1); }
     void markToDelete() noexcept { itemIndex = static_cast<std::size_t>(-2); }
     bool shouldDelete() const noexcept { return itemIndex == static_cast<std::size_t>(-2); }
+    bool isValid() const noexcept { return !isDeleted() && !shouldDelete(); }
 
-    bool isSticker() const noexcept { return !isDeleted() && !shouldDelete() && get().isSticker(); }
-    bool isSkin() const noexcept { return !isDeleted() && !shouldDelete() && get().isSkin(); }
-    bool isGlove() const noexcept { return !isDeleted() && !shouldDelete() && get().isGlove(); }
-    bool isMusic() const noexcept { return !isDeleted() && !shouldDelete() && get().isMusic(); }
-    bool isAgent() const noexcept { return !isDeleted() && !shouldDelete() && get().isAgent(); }
-    bool isCollectible() const noexcept { return !isDeleted() && !shouldDelete() && get().isCollectible(); }
-    bool isCase() const noexcept { return !isDeleted() && !shouldDelete() && get().isCase(); }
-    bool isCaseKey() const noexcept { return !isDeleted() && !shouldDelete() && get().isCaseKey(); }
-    bool isSealedGraffiti() const noexcept { return !isDeleted() && !shouldDelete() && get().isSealedGraffiti(); }
-    bool isOperationPass() const noexcept { return !isDeleted() && !shouldDelete() && get().isOperationPass(); }
-    bool isNameTag() const noexcept { return !isDeleted() && !shouldDelete() && get().isNameTag(); }
-    bool isPatch() const noexcept { return !isDeleted() && !shouldDelete() && get().isPatch(); }
-    bool isStatTrakSwapTool() const noexcept { return !isDeleted() && !shouldDelete() && get().isStatTrakSwapTool(); }
+    bool isSticker() const noexcept { return isValid() && get().isSticker(); }
+    bool isSkin() const noexcept { return isValid() && get().isSkin(); }
+    bool isGlove() const noexcept { return isValid() && get().isGlove(); }
+    bool isMusic() const noexcept { return isValid() && get().isMusic(); }
+    bool isAgent() const noexcept { return isValid() && get().isAgent(); }
+    bool isCollectible() const noexcept { return isValid() && get().isCollectible(); }
+    bool isCase() const noexcept { return isValid() && get().isCase(); }
+    bool isCaseKey() const noexcept { return isValid() && get().isCaseKey(); }
+    bool isSealedGraffiti() const noexcept { return isValid() && get().isSealedGraffiti(); }
+    bool isOperationPass() const noexcept { return isValid() && get().isOperationPass(); }
+    bool isNameTag() const noexcept { return isValid() && get().isNameTag(); }
+    bool isPatch() const noexcept { return isValid() && get().isPatch(); }
+    bool isStatTrakSwapTool() const noexcept { return isValid() && get().isStatTrakSwapTool(); }
+    bool isViewerPass() const noexcept { return isValid() && get().isViewerPass(); }
 
     std::size_t getDynamicDataIndex() const noexcept { assert(dynamicDataIndex != static_cast<std::size_t>(-1)); return dynamicDataIndex; }
 
-    const StaticData::GameItem& get() const noexcept { assert(!isDeleted() && !shouldDelete()); return StaticData::gameItems()[itemIndex]; }
+    const StaticData::GameItem& get() const noexcept { assert(isValid()); return StaticData::gameItems()[itemIndex]; }
 };
 
 namespace Inventory
@@ -71,7 +92,8 @@ namespace Inventory
     constexpr auto INVALID_DYNAMIC_DATA_IDX = static_cast<std::size_t>(-1);
 
     std::vector<InventoryItem>& get() noexcept;
-    void addItem(std::size_t gameItemIndex, std::size_t dynamicDataIdx, bool asUnacknowledged) noexcept;
+    void addItemUnacknowledged(std::size_t gameItemIndex, std::size_t dynamicDataIdx) noexcept;
+    void addItemAcknowledged(std::size_t gameItemIndex, std::size_t dynamicDataIdx) noexcept;
     std::uint64_t addItemNow(std::size_t gameItemIndex, std::size_t dynamicDataIdx, bool asUnacknowledged) noexcept;
     void deleteItemNow(std::uint64_t itemID) noexcept;
     void runFrame() noexcept;
@@ -85,9 +107,11 @@ namespace Inventory
     DynamicGloveData& dynamicGloveData(std::size_t index) noexcept;
     DynamicAgentData& dynamicAgentData(std::size_t index) noexcept;
     DynamicMusicData& dynamicMusicData(std::size_t index) noexcept;
+    DynamicSouvenirPackageData& dynamicSouvenirPackageData(std::size_t index) noexcept;
 
     std::size_t emplaceDynamicData(DynamicSkinData&& data) noexcept;
     std::size_t emplaceDynamicData(DynamicGloveData&& data) noexcept;
     std::size_t emplaceDynamicData(DynamicAgentData&& data) noexcept;
     std::size_t emplaceDynamicData(DynamicMusicData&& data) noexcept;
+    std::size_t emplaceDynamicData(DynamicSouvenirPackageData&& data) noexcept;
 }

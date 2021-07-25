@@ -1,11 +1,13 @@
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <cwctype>
 #include <fstream>
+#include <random>
+#include <span>
 #include <string_view>
+#include <unordered_map>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -108,10 +110,11 @@ std::wstring Helpers::toWideString(const std::string& str) noexcept
     return upperCase;
 }
 
-static void toUpper(wchar_t* str, std::size_t len) noexcept
+static void toUpper(std::span<wchar_t> str) noexcept
 {
     static std::unordered_map<wchar_t, wchar_t> upperCache;
-    for (std::size_t i = 0; i < len; ++i) {
+
+    for (std::size_t i = 0; i < str.size(); ++i) {
         if (str[i] >= 'a' && str[i] <= 'z') {
             str[i] -= ('a' - 'A');
         } else if (str[i] > 127) {
@@ -128,7 +131,7 @@ static void toUpper(wchar_t* str, std::size_t len) noexcept
 
 std::wstring Helpers::toUpper(std::wstring str) noexcept
 {
-    ::toUpper(str.data(), str.length());
+    ::toUpper(str);
     return str;
 }
 
@@ -186,4 +189,18 @@ std::size_t Helpers::calculateVmtLength(const std::uintptr_t* vmt) noexcept
         ++length;
 #endif
     return length;
+}
+
+float Helpers::random(float min, float max) noexcept
+{
+    std::mt19937 gen{ std::random_device{}() };
+    std::uniform_real_distribution dis{ min, max };
+    return dis(gen);
+}
+
+int Helpers::random(int min, int max) noexcept
+{
+    std::mt19937 gen{ std::random_device{}() };
+    std::uniform_int_distribution dis{ min, max };
+    return dis(gen);
 }

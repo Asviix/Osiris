@@ -38,13 +38,6 @@ namespace Helpers
                -1;
     }
 
-    constexpr auto utf8Substr(char* start, char* end, int n) noexcept
-    {
-        while (start < end && --n)
-            start += utf8SeqLen(*start);
-        return start;
-    }
-
     std::wstring toWideString(const std::string& str) noexcept;
     std::wstring toUpper(std::wstring str) noexcept;
 
@@ -60,4 +53,7 @@ namespace Helpers
     {
         return (id >= WeaponId::Bayonet && id <= WeaponId::SkeletonKnife) || id == WeaponId::KnifeT || id == WeaponId::Knife;
     }
+
+    float random(float min, float max) noexcept;
+    int random(int min, int max) noexcept;
 }

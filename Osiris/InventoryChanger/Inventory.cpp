@@ -1,8 +1,12 @@
-#include <random>
+#include <algorithm>
+#include <cmath>
+#include <utility>
 
 #include "../Helpers.h"
 #include "Inventory.h"
+#include "ItemGenerator.h"
 #include "../Memory.h"
+#include "../SDK/EconItemView.h"
 #include "../SDK/Entity.h"
 #include "../SDK/ItemSchema.h"
 
@@ -12,23 +16,7 @@ static std::vector<DynamicSkinData> dynamicSkinData;
 static std::vector<DynamicGloveData> dynamicGloveData;
 static std::vector<DynamicAgentData> dynamicAgentData;
 static std::vector<DynamicMusicData> dynamicMusicData;
-
-// FIXME: duplicated from InventoryChanger.cpp
-
-static float randomFloat(float min, float max) noexcept
-{
-    std::mt19937 gen{ std::random_device{}() };
-    std::uniform_real_distribution dis{ min, max };
-    return dis(gen);
-}
-
-static int randomInt(int min, int max) noexcept
-{
-    std::mt19937 gen{ std::random_device{}() };
-    std::uniform_int_distribution dis{ min, max };
-    return dis(gen);
-}
-//
+static std::vector<DynamicSouvenirPackageData> dynamicSouvenirPackageData;
 
 class InventoryImpl {
 public:
@@ -142,8 +130,9 @@ private:
             econItem->setPaintKit(static_cast<float>(StaticData::paintKits()[item.dataIndex].id));
 
             const auto& dynamicData = dynamicSkinData[inventoryItem.getDynamicDataIndex()];
-            if (dynamicData.isSouvenir) {
+            if (dynamicData.isSouvenir()) {
                 econItem->quality = 12;
+                econItem->setTournamentID(dynamicData.tournamentID);
             } else {
                 if (dynamicData.statTrak > -1) {
                     econItem->setStatTrak(dynamicData.statTrak);
@@ -152,6 +141,12 @@ private:
                 }
                 if (Helpers::isKnife(econItem->weaponId))
                     econItem->quality = 3;
+            }
+
+            if (dynamicData.tournamentStage != TournamentStage{ 0 }) {
+                econItem->setTournamentStage(static_cast<int>(dynamicData.tournamentStage));
+                econItem->setTournamentTeam1(static_cast<int>(dynamicData.tournamentTeam1));
+                econItem->setTournamentTeam2(static_cast<int>(dynamicData.tournamentTeam2));
             }
 
             econItem->setWear(dynamicData.wear);
@@ -185,10 +180,16 @@ private:
 
                 econItem->setStickerID(j, patch.patchID);
             }
+        } else if (item.isCase() && StaticData::cases()[item.dataIndex].isSouvenirPackage()) {
+            if (const auto& dynamicData = dynamicSouvenirPackageData[inventoryItem.getDynamicDataIndex()]; dynamicData.tournamentStage != TournamentStage{ 0 }) {
+                econItem->setTournamentStage(static_cast<int>(dynamicData.tournamentStage));
+                econItem->setTournamentTeam1(static_cast<int>(dynamicData.tournamentTeam1));
+                econItem->setTournamentTeam2(static_cast<int>(dynamicData.tournamentTeam2));
+            }
         }
 
         baseTypeCache->addObject(econItem);
-        memory->addEconItem(localInventory, econItem, false, false, false);
+        localInventory->soCreated(localInventory->getSOID(), (SharedObject*)econItem, 4);
 
         if (const auto inventoryComponent = *memory->uiComponentInventory) {
             memory->setItemSessionPropertyValue(inventoryComponent, econItem->itemID, "recent", "0");
@@ -196,7 +197,7 @@ private:
         }
 
         if (const auto view = memory->findOrCreateEconItemViewForItemID(econItem->itemID))
-            memory->clearInventoryImageRGBA(view);
+            view->clearInventoryImageRGBA();
 
         return econItem->itemID;
     }
@@ -224,41 +225,13 @@ private:
         if (const auto baseTypeCache = localInventory->getItemBaseTypeCache())
             baseTypeCache->removeObject(econItem);
 
+        econItem->destructor();
         item->markAsDeleted();
-    }
-
-    static std::size_t createDefaultDynamicData(std::size_t gameItemIndex) noexcept
-    {
-        std::size_t index = static_cast<std::size_t>(-1);
-
-        if (const auto& item = StaticData::gameItems()[gameItemIndex]; item.isSkin()) {
-            const auto& staticData = StaticData::paintKits()[item.dataIndex];
-            DynamicSkinData dynamicData;
-            dynamicData.wear = std::lerp(staticData.wearRemapMin, staticData.wearRemapMax, randomFloat(0.0f, 0.07f));
-            dynamicData.seed = randomInt(1, 1000);
-            dynamicSkinData.push_back(dynamicData);
-            index = dynamicSkinData.size() - 1;
-        } else if (item.isGlove()) {
-            const auto& staticData = StaticData::paintKits()[item.dataIndex];
-            DynamicGloveData dynamicData;
-            dynamicData.wear = std::lerp(staticData.wearRemapMin, staticData.wearRemapMax, randomFloat(0.0f, 0.07f));
-            dynamicData.seed = randomInt(1, 1000);
-            dynamicGloveData.push_back(dynamicData);
-            index = dynamicGloveData.size() - 1;
-        } else if (item.isAgent()) {
-            dynamicAgentData.push_back({});
-            index = dynamicAgentData.size() - 1;
-        } else if (item.isMusic()) {
-            dynamicMusicData.push_back({});
-            index = dynamicMusicData.size() - 1;
-        }
-
-        return index;
     }
 
     std::uint64_t _addItem(std::size_t gameItemIndex, std::size_t dynamicDataIdx, bool asUnacknowledged) noexcept
     {
-        return _createSOCItem(inventory.emplace_back(gameItemIndex, dynamicDataIdx != INVALID_DYNAMIC_DATA_IDX ? dynamicDataIdx : createDefaultDynamicData(gameItemIndex)), asUnacknowledged);
+        return _createSOCItem(inventory.emplace_back(gameItemIndex, dynamicDataIdx != INVALID_DYNAMIC_DATA_IDX ? dynamicDataIdx : ItemGenerator::createDefaultDynamicData(gameItemIndex)), asUnacknowledged);
     }
 
     std::uint64_t _recreateItem(std::uint64_t itemID) noexcept
@@ -360,6 +333,11 @@ DynamicMusicData& Inventory::dynamicMusicData(std::size_t index) noexcept
     return ::dynamicMusicData[index];
 }
 
+DynamicSouvenirPackageData& Inventory::dynamicSouvenirPackageData(std::size_t index) noexcept
+{
+    return ::dynamicSouvenirPackageData[index];
+}
+
 std::size_t Inventory::emplaceDynamicData(DynamicSkinData&& data) noexcept
 {
     ::dynamicSkinData.push_back(std::move(data));
@@ -384,14 +362,25 @@ std::size_t Inventory::emplaceDynamicData(DynamicMusicData&& data) noexcept
     return ::dynamicMusicData.size() - 1;
 }
 
+std::size_t Inventory::emplaceDynamicData(DynamicSouvenirPackageData&& data) noexcept
+{
+    ::dynamicSouvenirPackageData.push_back(std::move(data));
+    return ::dynamicSouvenirPackageData.size() - 1;
+}
+
 std::vector<InventoryItem>& Inventory::get() noexcept
 {
     return InventoryImpl::get();
 }
 
-void Inventory::addItem(std::size_t gameItemIndex, std::size_t dynamicDataIdx, bool asUnacknowledged) noexcept
+void Inventory::addItemUnacknowledged(std::size_t gameItemIndex, std::size_t dynamicDataIdx) noexcept
 {
-    InventoryImpl::addItem(gameItemIndex, dynamicDataIdx, asUnacknowledged);
+    InventoryImpl::addItem(gameItemIndex, dynamicDataIdx, true);
+}
+
+void Inventory::addItemAcknowledged(std::size_t gameItemIndex, std::size_t dynamicDataIdx) noexcept
+{
+    InventoryImpl::addItem(gameItemIndex, dynamicDataIdx, false);
 }
 
 std::uint64_t Inventory::addItemNow(std::size_t gameItemIndex, std::size_t dynamicDataIdx, bool asUnacknowledged) noexcept
