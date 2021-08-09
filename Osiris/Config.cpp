@@ -107,7 +107,7 @@ static void from_json(const json& j, Font& f)
     if (!f.name.empty())
         config->scheduleFontLoad(f.name);
 
-    if (const auto it = std::find_if(config->getSystemFonts().begin(), config->getSystemFonts().end(), [&f](const auto& e) { return e == f.name; }); it != config->getSystemFonts().end())
+    if (const auto it = std::ranges::find(config->getSystemFonts(), f.name); it != config->getSystemFonts().end())
         f.index = std::distance(config->getSystemFonts().begin(), it);
     else
         f.index = 0;
@@ -566,7 +566,7 @@ void Config::remove(size_t id) noexcept
     configs.erase(configs.cbegin() + id);
 }
 
-void Config::rename(size_t item, const char8_t* newName) noexcept
+void Config::rename(size_t item, std::u8string_view newName) noexcept
 {
     std::error_code ec;
     std::filesystem::rename(path / configs[item], path / newName, ec);
